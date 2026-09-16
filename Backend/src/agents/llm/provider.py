@@ -150,12 +150,13 @@ class MultiLLMRouter:
                     f"Falling over to next available provider."
                 )
 
+        error_detail = str(last_error) if last_error else "All LLM providers unavailable or no valid API keys configured"
         return LLMResponse(
-            content="Not found in sources.",
+            content=f"⚠️ LLM Generation Error: {error_detail}. Please verify your GEMINI_API_KEY or GROQ_API_KEY in .env.",
             model_used="fallback-exhausted",
             execution_time_ms=0.0,
             success=False,
-            error=str(last_error) if last_error else "All LLM providers unavailable"
+            error=error_detail
         )
 
     async def generate_response(

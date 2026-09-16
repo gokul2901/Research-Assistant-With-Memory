@@ -106,6 +106,28 @@ class RAGAgent:
             model_override=model_override,
         )
 
+        exec_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+        if not llm_res.success:
+            return {
+                "answer": llm_res.content,
+                "citations": [],
+                "sources": [
+                    {
+                        "source_id": info["source_id"],
+                        "url": info["url"],
+                        "title": info["title"],
+                        "domain": info.get("domain", ""),
+                        "chunk_count": len([c for c in context_pkg.chunks if c.source_id == info["source_id"]]),
+                    }
+                    for info in context_pkg.sources_map.values()
+                ],
+                "model_used": llm_res.model_used,
+                "is_grounded": False,
+                "retrieved_chunks_count": len(context_pkg.chunks),
+                "execution_time_ms": exec_time_ms,
+            }
+
         # Step 4: Process citations
         raw_answer, citations, referenced_sources, is_grounded = (
             self.pipeline.process_citations(
@@ -113,8 +135,6 @@ class RAGAgent:
                 context_pkg=context_pkg,
             )
         )
-
-        exec_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
         return {
             "answer": raw_answer,
