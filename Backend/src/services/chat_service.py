@@ -154,13 +154,27 @@ class ChatService:
             for c in citations
         ]
 
+        # Ensure referenced_sources are proper SourceMetadataRef models
+        sanitized_sources = []
+        for s in referenced_sources:
+            if isinstance(s, SourceMetadataRef):
+                sanitized_sources.append(s)
+            elif isinstance(s, dict):
+                sanitized_sources.append(SourceMetadataRef(
+                    source_id=s.get("source_id", ""),
+                    url=s.get("url", ""),
+                    title=s.get("title", ""),
+                    domain=s.get("domain", ""),
+                    chunk_count=s.get("chunk_count", 0),
+                ))
+
         assistant_msg = ChatMessage(
             message_id=f"msg_{generate_uuid()[:12]}",
             session_id=session.session_id,
             role="assistant",
             content=raw_answer,
             citations=domain_citations,
-            sources=[s.model_dump() for s in referenced_sources],
+            sources=[s.model_dump() for s in sanitized_sources],
             timestamp=datetime.utcnow(),
             model_used=model_used,
             retrieved_chunk_count=retrieved_chunks_count
@@ -172,7 +186,7 @@ class ChatService:
             question=req.question,
             answer=raw_answer,
             citations=citations,
-            sources=referenced_sources,
+            sources=sanitized_sources,
             session_id=session.session_id,
             model_used=model_used,
             retrieved_chunks_count=retrieved_chunks_count,

@@ -31,6 +31,12 @@ class InterceptHandler(logging.Handler):
 
 def setup_logging() -> None:
     """Configure Loguru logging format and handlers."""
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     logger.remove()
 
     log_format = (
