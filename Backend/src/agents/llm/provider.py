@@ -44,6 +44,18 @@ class MultiLLMRouter:
         # Configure model candidates with automatic sub-model fallbacks
         self.model_candidates = [
             {
+                "name": "Mistral (High Performance)",
+                "models": [
+                    "mistral/open-mistral-nemo",
+                    "mistral/open-mistral-7b",
+                    "mistral/ministral-8b-latest",
+                    "mistral/codestral-latest",
+                ],
+                "api_key": settings.MISTRAL_API_KEY or settings.MIST_API_KEY,
+                "api_base": None,
+                "kwargs": {"temperature": 0.1, "max_tokens": 2048}
+            },
+            {
                 "name": "Gemini (Primary)",
                 "models": [
                     settings.PRIMARY_MODEL,
@@ -110,11 +122,15 @@ class MultiLLMRouter:
             }
             if "gemini" in model_override.lower():
                 override_candidate["api_key"] = settings.GEMINI_API_KEY
+            elif "mistral" in model_override.lower():
+                override_candidate["api_key"] = settings.MISTRAL_API_KEY or settings.MIST_API_KEY
             elif "glm" in model_override.lower():
                 override_candidate["api_key"] = settings.ZHIPUAI_API_KEY or settings.GLM_API_KEY
                 override_candidate["api_base"] = "https://open.bigmodel.cn/api/paas/v4"
-            elif "groq" in model_override.lower() or "mistral" in model_override.lower():
+            elif "groq" in model_override.lower():
                 override_candidate["api_key"] = settings.GROQ_API_KEY
+            elif "openai" in model_override.lower() or "gpt" in model_override.lower():
+                override_candidate["api_key"] = settings.OPENAI_API_KEY
             candidates.insert(0, override_candidate)
 
         last_error = None

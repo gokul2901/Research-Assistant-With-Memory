@@ -44,6 +44,8 @@ class Settings(BaseSettings):
 
     # API Keys
     GEMINI_API_KEY: Optional[str] = None
+    MISTRAL_API_KEY: Optional[str] = None
+    MIST_API_KEY: Optional[str] = None
     ZHIPUAI_API_KEY: Optional[str] = None
     GLM_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
