@@ -1,12 +1,20 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from "axios";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "http://127.0.0.1:8000";
+const getApiBaseUrl = (): string => {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return "http://localhost:8000";
+  }
+  return "http://127.0.0.1:8000";
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60s for batch LLM/Scraping operations
+  timeout: 120000, // 120s for scraping, chunking, and embedding
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
