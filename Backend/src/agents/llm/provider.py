@@ -41,26 +41,50 @@ class LLMResponse:
 
 class MultiLLMRouter:
     def __init__(self):
-        # Configure model candidates in order of preference
+        # Configure model candidates with automatic sub-model fallbacks
         self.model_candidates = [
             {
                 "name": "Gemini (Primary)",
-                "model": settings.PRIMARY_MODEL,
+                "models": [
+                    settings.PRIMARY_MODEL,
+                    "gemini/gemini-2.5-flash",
+                    "gemini/gemini-2.0-flash",
+                    "gemini/gemini-1.5-flash",
+                ],
                 "api_key": settings.GEMINI_API_KEY,
                 "api_base": None,
                 "kwargs": {"temperature": 0.1, "max_tokens": 2048}
             },
             {
-                "name": "GLM (Fallback 1)",
-                "model": settings.FALLBACK_MODEL_1,
+                "name": "Groq (Fast Fallback)",
+                "models": [
+                    settings.FALLBACK_MODEL_2,
+                    "groq/llama-3.1-8b-instant",
+                    "groq/llama-3.3-70b-versatile",
+                    "groq/mixtral-8x7b-32768",
+                    "groq/gemma2-9b-it",
+                ],
+                "api_key": settings.GROQ_API_KEY,
+                "api_base": None,
+                "kwargs": {"temperature": 0.1, "max_tokens": 2048}
+            },
+            {
+                "name": "GLM / Zhipu (Fallback)",
+                "models": [
+                    "openai/glm-4-flash",
+                    settings.FALLBACK_MODEL_1,
+                ],
                 "api_key": settings.ZHIPUAI_API_KEY or settings.GLM_API_KEY,
                 "api_base": "https://open.bigmodel.cn/api/paas/v4",
                 "kwargs": {"temperature": 0.1, "max_tokens": 2048}
             },
             {
-                "name": "Groq / Mistral (Fallback 2)",
-                "model": settings.FALLBACK_MODEL_2,
-                "api_key": settings.GROQ_API_KEY,
+                "name": "OpenAI (Fallback)",
+                "models": [
+                    "openai/gpt-4o-mini",
+                    "openai/gpt-3.5-turbo",
+                ],
+                "api_key": settings.OPENAI_API_KEY,
                 "api_base": None,
                 "kwargs": {"temperature": 0.1, "max_tokens": 2048}
             }
@@ -96,7 +120,7 @@ class MultiLLMRouter:
         last_error = None
 
         for candidate in candidates:
-            model_name = candidate["model"]
+            models_to_try = candidate.get("models") or [candidate.get("model")]
             provider_label = candidate["name"]
             api_key = candidate.get("api_key")
             api_base = candidate.get("api_base")
@@ -110,45 +134,48 @@ class MultiLLMRouter:
                 logger.debug(f"Skipping {provider_label} - no API key configured.")
                 continue
 
-            logger.info(f"Attempting generation with {provider_label} (model: {model_name})...")
-            start_time = time.perf_counter()
+            for model_name in models_to_try:
+                if not model_name:
+                    continue
+                logger.info(f"Attempting generation with {provider_label} (model: {model_name})...")
+                start_time = time.perf_counter()
 
-            try:
-                call_args: Dict[str, Any] = {
-                    "model": model_name,
-                    "messages": messages,
-                    "api_key": api_key,
-                    "timeout": 20,
-                    **kwargs
-                }
-                if api_base:
-                    call_args["api_base"] = api_base
+                try:
+                    call_args: Dict[str, Any] = {
+                        "model": model_name,
+                        "messages": messages,
+                        "api_key": api_key,
+                        "timeout": 20,
+                        **kwargs
+                    }
+                    if api_base:
+                        call_args["api_base"] = api_base
 
-                response = await litellm.acompletion(**call_args)
-                elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                    response = await litellm.acompletion(**call_args)
+                    elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-                reply_content = response.choices[0].message.content or ""
-                usage = getattr(response, "usage", None)
-                p_tokens = usage.prompt_tokens if usage else 0
-                c_tokens = usage.completion_tokens if usage else 0
+                    reply_content = response.choices[0].message.content or ""
+                    usage = getattr(response, "usage", None)
+                    p_tokens = usage.prompt_tokens if usage else 0
+                    c_tokens = usage.completion_tokens if usage else 0
 
-                logger.info(f"Successfully generated answer with {provider_label} in {elapsed_ms}ms")
-                return LLMResponse(
-                    content=reply_content.strip(),
-                    model_used=model_name,
-                    execution_time_ms=elapsed_ms,
-                    prompt_tokens=p_tokens,
-                    completion_tokens=c_tokens,
-                    success=True
-                )
+                    logger.info(f"Successfully generated answer with {provider_label} [{model_name}] in {elapsed_ms}ms")
+                    return LLMResponse(
+                        content=reply_content.strip(),
+                        model_used=model_name,
+                        execution_time_ms=elapsed_ms,
+                        prompt_tokens=p_tokens,
+                        completion_tokens=c_tokens,
+                        success=True
+                    )
 
-            except Exception as e:
-                elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
-                last_error = e
-                logger.warning(
-                    f"LLM Provider {provider_label} failed after {elapsed_ms}ms: {str(e)}. "
-                    f"Falling over to next available provider."
-                )
+                except Exception as e:
+                    elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                    last_error = e
+                    logger.warning(
+                        f"LLM Provider {provider_label} ({model_name}) failed after {elapsed_ms}ms: {str(e)}. "
+                        f"Trying next candidate model..."
+                    )
 
         error_detail = str(last_error) if last_error else "All LLM providers unavailable or no valid API keys configured"
         return LLMResponse(
