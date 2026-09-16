@@ -1,0 +1,199 @@
+{
+  "name": "Research Assistant Scraper Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "research-assistant/scrape",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "c82c7740-ee0a-458c-86e5-e554f88ba827",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -496,
+        -96
+      ],
+      "webhookId": "12b34abb-eb4b-47da-bb0c-bd327d790765",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputItem = $input.first();\nconst body = inputItem?.json?.body || inputItem?.json || {};\n\n// Validate required fields\nif (!body.url) {\n  throw new Error(\"URL missing\");\n}\nif (!body.job_id) {\n  throw new Error(\"job_id missing\");\n}\nif (!body.source_id) {\n  throw new Error(\"source_id missing\");\n}\nif (!body.callback_url) {\n  throw new Error(\"callback_url missing\");\n}\n\n// Return formatted output array for n8n\nreturn [{\n  json: {\n    job_id: body.job_id,\n    source_id: body.source_id,\n    url: body.url,\n    callback_url: body.callback_url\n  }\n}];\n"
+      },
+      "id": "78751f85-2039-4b25-920a-ddedcc20867f",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={ \"url\": \"{{ $json.url }}\" }",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "=application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7ea2d823-4e7d-42d1-ada3-51ae07e1c474",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -48,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// HTTP Request returns the fetched HTML under $json.data.\n// Fall back to other common fields just in case.\nconst data = $json;\n\nlet content = \"\";\nif (typeof data.data === \"string\" && data.data) {\n  content = data.data;\n} else if (data.article) {\n  content = data.article;\n} else if (data.main) {\n  content = data.main;\n} else if (typeof data.body === \"string\" && data.body) {\n  content = data.body;\n}\n\nif (!content) {\n  throw new Error(\"No webpage content extracted\");\n}\n\n// Remove script/style blocks\ncontent = content\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, \"\")\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, \"\")\n  .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, \"\");\n\n// Remove common unwanted HTML elements\ncontent = content\n  .replace(/<nav[\\s\\S]*?<\\/nav>/gi, \"\")\n  .replace(/<footer[\\s\\S]*?<\\/footer>/gi, \"\")\n  .replace(/<aside[\\s\\S]*?<\\/aside>/gi, \"\");\n\n// Convert common HTML structures into readable text\ncontent = content\n  .replace(/<h1[^>]*>/gi, \"\\n# \")\n  .replace(/<h2[^>]*>/gi, \"\\n## \")\n  .replace(/<h3[^>]*>/gi, \"\\n### \")\n  .replace(/<\\/h[1-3]>/gi, \"\\n\")\n  .replace(/<p[^>]*>/gi, \"\\n\")\n  .replace(/<\\/p>/gi, \"\\n\")\n  .replace(/<li[^>]*>/gi, \"\\n- \")\n  .replace(/<\\/li>/gi, \"\\n\");\n\n// Remove remaining HTML tags\ncontent = content.replace(/<[^>]+>/g, \" \");\n\n// Decode basic HTML entities\ncontent = content\n  .replace(/&nbsp;/gi, \" \")\n  .replace(/&amp;/gi, \"&\")\n  .replace(/&quot;/gi, '\"')\n  .replace(/&#39;/gi, \"'\");\n\n// Normalize whitespace\ncontent = content\n  .replace(/[ \\t]+/g, \" \")\n  .replace(/\\n\\s*\\n+/g, \"\\n\\n\")\n  .trim();\n\nif (content.length < 200) {\n  throw new Error(\"Extracted content is too short\");\n}\n\n// Re-attach the job metadata, which the HTTP Request response does not carry.\nconst meta = $(\"Code in JavaScript\").item.json;\n\nreturn [\n  {\n    json: {\n      ...meta,\n      content\n    }\n  }\n];"
+      },
+      "id": "fb986ea0-98a0-4b44-aede-0cf32dac7fa3",
+      "name": "Code in JavaScript1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\n// Extract hostname without the URL global (not available in the Code sandbox).\nconst hostnameMatch = String(data.url || \"\").match(/^https?:\\/\\/([^/?#]+)/i);\nconst hostname = hostnameMatch ? hostnameMatch[1] : (data.url || \"\");\n\nconst title =\n  data.title ||\n  data.page_title ||\n  hostname;\n\nconst content = data.content || \"\";\n\nconst wordCount = content\n  .split(/\\s+/)\n  .filter(Boolean)\n  .length;\n\nreturn [\n  {\n    json: {\n      job_id: data.job_id,\n      source_id: data.source_id,\n\n      url: data.url,\n\n      canonical_url: data.canonical_url || data.url,\n\n      title: title,\n\n      domain: hostname,\n\n      language: data.language || \"unknown\",\n\n      content: content,\n\n      word_count: wordCount,\n\n      character_count: content.length,\n\n      scraped_at: new Date().toISOString(),\n\n      status: \"completed\"\n    }\n  }\n];"
+      },
+      "id": "1496bf10-8eae-4ee4-b43c-3092c7048a8a",
+      "name": "Code in JavaScript2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d1f4c4b6-85d0-4126-a812-d66b99ae3a3a",
+              "leftValue": "\"HTTP Request1\"",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "781887a8-2ea9-4994-b4c7-bd15c18a6eb0",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        -96
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ff2743a3-d0ac-49ea-9fda-1b4cf2d5522e",
+  "meta": {
+    "instanceId": "ba69aae1d20ea9f125ee67b6e8bc2ae7574027cd4f1ffade181b7cfea4e47f00"
+  },
+  "nodeGroups": [],
+  "id": "TcjCBdrSRFwVy9J9",
+  "tags": []
+}

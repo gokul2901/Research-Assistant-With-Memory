@@ -1,0 +1,147 @@
+{
+  "name": "Research Assistant - Automated URL Ingestion Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-1",
+      "name": "Schedule Ingestion Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-ingest-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger-1",
+      "name": "Incoming URL Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        480
+      ],
+      "webhookId": "rag-url-ingest"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare URLs array from webhook payload or scheduled RSS feed\nconst items = $input.all();\nconst urls = [];\n\nfor (const item of items) {\n  if (item.json.url) {\n    urls.push(item.json.url);\n  } else if (item.json.link) {\n    urls.push(item.json.link);\n  } else if (item.json.urls && Array.isArray(item.json.urls)) {\n    urls.push(...item.json.urls);\n  }\n}\n\n// Fallback sample URLs if triggered manually without body\nif (urls.length === 0) {\n  urls.push(\"https://fastapi.tiangolo.com/tutorial/first-steps/\");\n}\n\nreturn [{ json: { urls: Array.from(new Set(urls)) } }];"
+      },
+      "id": "code-extract-urls",
+      "name": "Extract & Deduplicate URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v1/webhook/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "http-rag-backend",
+      "name": "Send to RAG Ingestion Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        740,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nreturn [{\n  json: {\n    status: \"success\",\n    message: response.message,\n    indexed_count: response.data?.successful_count || 0,\n    failed_count: response.data?.failed_count || 0,\n    details: response.data?.results || []\n  }\n}];"
+      },
+      "id": "code-format-response",
+      "name": "Format Ingestion Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Ingestion Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract & Deduplicate URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Incoming URL Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract & Deduplicate URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Deduplicate URLs": {
+      "main": [
+        [
+          {
+            "node": "Send to RAG Ingestion Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to RAG Ingestion Service": {
+      "main": [
+        [
+          {
+            "node": "Format Ingestion Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "name": "Research Assistant - Web Scraping & URL Ingestion Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "scrape-url",
+        "options": {}
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "node_webhook_trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Validate Input Payload from FastAPI\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body.url || !body.job_id || !body.source_id || !body.callback_url) {\n  throw new Error('Missing required fields: url, job_id, source_id, callback_url');\n}\n\n// Basic security validation: scheme must be http/https\nconst url = body.url.trim();\nif (!url.startsWith('http://') && !url.startsWith('https://')) {\n  throw new Error('Invalid URL scheme. Must be http or https.');\n}\n\nreturn [{\n  json: {\n    job_id: body.job_id,\n    source_id: body.source_id,\n    url: url,\n    callback_url: body.callback_url\n  }\n}];"
+      },
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "node_validate_input"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "ResearchAssistantBot/1.0"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+          ]
+        },
+        "options": {
+          "followRedirects": true,
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Fetch Webpage HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        300
+      ],
+      "id": "node_fetch_webpage"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract HTML, Remove Boilerplate, Parse Headings & Metadata\nconst inputData = $input.first().json;\nconst html = inputData.data || inputData.body || '';\nconst sourceInfo = $('Validate Input').first().json;\n\n// Lightweight JS HTML sanitizer & extractor for n8n\nlet cleanText = '';\nlet title = '';\nlet description = '';\nlet canonicalUrl = sourceInfo.url;\n\n// 1. Extract Title\nconst titleMatch = html.match(/<title[^>]*>([^<]+)<\\/title>/i);\nif (titleMatch) {\n  title = titleMatch[1].trim();\n}\n\n// 2. Canonical URL\nconst canonicalMatch = html.match(/<link[^>]+rel=[\"']canonical[\"'][^>]+href=[\"']([^\"']+)[\"']/i);\nif (canonicalMatch) {\n  canonicalUrl = canonicalMatch[1].trim();\n}\n\n// 3. Remove Scripts, Styles, Nav, Footer, Comments\nlet textContent = html\n  .replace(/<script\\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, '')\n  .replace(/<style\\b[^<]*(?:(?!<\\/style>)<[^<]*)*<\\/style>/gi, '')\n  .replace(/<nav\\b[^<]*(?:(?!<\\/nav>)<[^<]*)*<\\/nav>/gi, '')\n  .replace(/<footer\\b[^<]*(?:(?!<\\/footer>)<[^<]*)*<\\/footer>/gi, '')\n  .replace(/<header\\b[^<]*(?:(?!<\\/header>)<[^<]*)*<\\/header>/gi, '')\n  .replace(/<!--[\\s\\S]*?-->/g, '');\n\n// 4. Convert headings to Markdown structure\ntextContent = textContent\n  .replace(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/gi, '\\n\\n# $1\\n\\n')\n  .replace(/<h2[^>]*>([\\s\\S]*?)<\\/h2>/gi, '\\n\\n## $1\\n\\n')\n  .replace(/<h3[^>]*>([\\s\\S]*?)<\\/h3>/gi, '\\n\\n### $1\\n\\n')\n  .replace(/<li[^>]*>([\\s\\S]*?)<\\/li>/gi, '\\n- $1')\n  .replace(/<p[^>]*>([\\s\\S]*?)<\\/p>/gi, '\\n$1\\n');\n\n// 5. Strip all remaining HTML tags\ncleanText = textContent.replace(/<[^>]+>/g, ' ');\n\n// 6. Decode common entities\ncleanText = cleanText\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\")\n  .replace(/&nbsp;/g, ' ');\n\n// 7. Normalize multiple whitespaces and empty lines\ncleanText = cleanText\n  .split('\\n')\n  .map(l => l.trim())\n  .filter(l => l.length > 0)\n  .join('\\n\\n');\n\nreturn [{\n  json: {\n    job_id: sourceInfo.job_id,\n    source_id: sourceInfo.source_id,\n    status: cleanText.length > 30 ? 'completed' : 'failed',\n    url: sourceInfo.url,\n    canonical_url: canonicalUrl,\n    title: title || sourceInfo.url,\n    content: cleanText,\n    language: 'en',\n    callback_url: sourceInfo.callback_url,\n    error: cleanText.length > 30 ? null : 'Extracted content was empty or below minimum threshold'\n  }\n}];"
+      },
+      "name": "Content Cleaning & Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "id": "node_content_cleaning"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-N8N-Callback-Secret",
+              "value": "production-n8n-secret-change-in-prod"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"job_id\": \"{{ $json.job_id }}\",\n  \"source_id\": \"{{ $json.source_id }}\",\n  \"status\": \"{{ $json.status }}\",\n  \"url\": \"{{ $json.url }}\",\n  \"canonical_url\": \"{{ $json.canonical_url }}\",\n  \"title\": \"{{ $json.title }}\",\n  \"content\": \"{{ $json.content }}\",\n  \"language\": \"{{ $json.language }}\",\n  \"error\": {{ $json.error ? '\"' + $json.error + '\"' : 'null' }}\n}",
+        "options": {}
+      },
+      "name": "Send Callback to FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        300
+      ],
+      "id": "node_send_callback"
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Fetch Webpage HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Webpage HTML": {
+      "main": [
+        [
+          {
+            "node": "Content Cleaning & Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Cleaning & Extraction": {
+      "main": [
+        [
+          {
+            "node": "Send Callback to FastAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
