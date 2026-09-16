@@ -16,12 +16,14 @@
 
 ## 📋 Table of Contents
 1. [What It Does](#-1-what-it-does)
-2. [System Architecture & LangGraph Agents](#-2-system-architecture--langgraph-agents)
+2. [System Architecture & LangGraph Agents](#-2-system-architecture--langgraph-agents) *(Deep Dive: [docs/architecture.md](docs/architecture.md))*
 3. [AI Models & Embedding Strategy](#-3-ai-models--embedding-strategy)
-4. [How to Run the Application](#-4-how-to-run-the-application)
-5. [n8n Automation & Webhook Workflow](#-5-n8n-automation--webhook-workflow)
-6. [Environment Variables Reference (`.env`)](#-6-environment-variables-reference-env)
-7. [API Endpoints Overview](#-7-api-endpoints-overview)
+4. [Platform Workflows & Pipelines](#-platform-workflows--data-pipelines) *(Deep Dive: [docs/workflow.md](docs/workflow.md))*
+5. [How to Run the Application](#-4-how-to-run-the-application)
+6. [n8n Automation & Webhook Workflow](#-5-n8n-automation--webhook-workflow)
+7. [Environment Variables Reference (`.env`)](#-6-environment-variables-reference-env)
+8. [API Endpoints Overview](#-7-api-endpoints-overview)
+9. [Documentation Hub](#-documentation-hub)
 
 ---
 
@@ -263,3 +265,12 @@ cd Backend
 python -m pytest src/tests/ -v
 ```
 *(All 23 unit and integration tests passing)*
+
+---
+
+## 📚 8. Documentation Hub
+
+For in-depth architectural designs, sequence diagrams, and detailed pipeline specifications:
+- 🏛️ **[System Architecture Guide](docs/architecture.md)**: Deep dive into the modular RAG subsystems, LangGraph agents, LiteLLM multi-tier fallback, and ChromaDB persistence models.
+- 🔄 **[Platform Workflows & Pipelines](docs/workflow.md)**: Step-by-step ingestion workflows, retrieval pipelines, n8n webhook architectures, and PDF generation processes.
+
